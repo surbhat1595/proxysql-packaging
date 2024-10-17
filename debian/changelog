@@ -2,4 +2,4 @@ proxysql2 (@@VERSION@@) unstable; urgency=low
 
   * Initial Release.
 
- -- EvgeniyPatlan <evgeniy.patlan@percona.com>  mon, 01 Feb 2021 07:41:56 -0400
+ -- EvgeniyPatlan <evgeniy.patlan@percona.com>  Tue, 15 Oct 2024 07:41:56 -0400

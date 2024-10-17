@@ -186,14 +186,25 @@ get_system(){
     fi
     return
 }
+
 install_go() {
-    wget -q https://dl.google.com/go/go1.22.2.linux-amd64.tar.gz
-    tar -C /usr/bin -xzf go1.22.2.linux-amd64.tar.gz
     export PATH=$PATH:/usr/bin/go/bin
+    if [ x"$ARCH" = "xx86_64" ]; then
+        wget https://go.dev/dl/go1.22.7.linux-amd64.tar.gz
+        rm -rf /usr/bin/go
+        tar -C /usr/bin -xzf go1.22.7.linux-amd64.tar.gz
+        #update-alternatives --install /usr/bin/go go /usr/local/go/bin/go 1
+        #update-alternatives --set go /usr/local/go/bin/go
+    else
+        wget https://go.dev/dl/go1.22.7.linux-arm64.tar.gz
+        rm -rf /usr/bin/go
+        tar -C /usr/bin -xzf go1.22.7.linux-arm64.tar.gz
+        #update-alternatives --install /usr/bin/go go /usr/local/go/bin/go 1
+        #update-alternatives --set go /usr/local/go/bin/go
+    fi
     go version
     which go
-    command -v go
-    whereis go 
+    whereis go
 }
 
 update_pat() {
@@ -219,12 +230,15 @@ install_deps() {
     fi
     CURPLACE=$(pwd)
     RHEL=$(rpm --eval %rhel)
+    ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
     if [ "x$OS" = "xrpm" ]; then
       if [ "x${RHEL}" = "x7" -o "x${RHEL}" = "x8" ]; then
             switch_to_vault_repo
       fi
       yum -y install wget which
-      add_percona_yum_repo
+      if [ x"$ARCH" = "xx86_64" ]; then
+          add_percona_yum_repo
+      fi
 #      wget http://jenkins.percona.com/yum-repo/percona-dev.repo
 #      mv -f percona-dev.repo /etc/yum.repos.d/
       yum clean all
@@ -333,7 +347,7 @@ install_deps() {
           echo "waiting"
           sleep 1
       done
-      INSTALL_LIST="build-essential gnupg2 devscripts gawk pkg-config debhelper cmake wget libssl-dev gawk lynx zlib1g-dev bison byacc flex automake bzip2 cmake make g++ gcc git openssl libssl-dev libgnutls28-dev libtool patch gnutls-dev libgnutls28-dev libcurl4-openssl-dev libunwind8 libunwind-dev uuid-dev"
+      INSTALL_LIST="build-essential gnupg2 devscripts gawk pkg-config debhelper cmake wget libssl-dev gawk lynx zlib1g-dev bison byacc flex automake bzip2 cmake make g++ gcc git openssl libssl-dev libgnutls28-dev libtool patch gnutls-dev libgnutls28-dev libcurl4-openssl-dev libunwind8 libunwind-dev uuid-dev patchelf"
        until DEBIAN_FRONTEND=noninteractive apt-get -y --allow-unauthenticated install ${INSTALL_LIST}; do
         sleep 1
         echo "waiting"
@@ -685,7 +699,13 @@ build_deb(){
     mv tools/LICENSE .
     mv tools/proxysql-admin.cnf etc/
     sed -i "s:@@VERSION@@:${VERSION}:g" debian/changelog
+    sed -i "s:@@VERSION@@:${VERSION}:g" debian/control.systemd
     sed -i "s:@@VERSION@@:${VERSION}:g" debian/control
+    if [ x"$ARCH" = "xaarch64" ]; then
+        sed -i "s:amd64:arm64:g" debian/control
+        sed -i "s:amd64:arm64:g" debian/control.systemd
+        cat debian/control
+    fi
     if [ $DEBIAN_VERSION = "bionic" -o $DEBIAN_VERSION = "jessie" -o $DEBIAN_VERSION = "focal" -o $DEBIAN_VERSION = "jammy" -o $DEBIAN_VERSION = "buster" -o $DEBIAN_VERSION = "stretch" -o $DEBIAN_VERSION = "artful" -o $DEBIAN_VERSION = "bionic" -o ${DEBIAN_VERSION} = "bullseye" -o ${DEBIAN_VERSION} = "bookworm" -o ${DEBIAN_VERSION} = "noble" ]; then
         mv debian/control.systemd debian/control
         mv debian/rules.systemd debian/rules    
@@ -697,13 +717,13 @@ build_deb(){
     dch -m -D "${DEBIAN_VERSION}" --force-distribution -v "2:${VERSION}-${DEB_RELEASE}.${DEBIAN_VERSION}" 'Update distribution'
     unset $(locale|cut -d= -f1)
     if [ ${DEBIAN_VERSION} = "focal" -o ${DEBIAN_VERSION} = "jammy" -o ${DEBIAN_VERSION} = "bullseye" -o ${DEBIAN_VERSION} = "bookworm" -o ${DEBIAN_VERSION} = "noble" ]; then
-	sed -i 's:8:9:' debian/compat
-        sed -i 's:, dh-systemd::' debian/control
-    fi
-    if [ ${DEBIAN_VERSION} = "jammy" ]; then
 	sed -i 's:8:10:' debian/compat
         sed -i 's:, dh-systemd::' debian/control
     fi
+    #if [ ${DEBIAN_VERSION} = "jammy" ]; then
+    #	sed -i 's:8:10:' debian/compat
+    #    sed -i 's:, dh-systemd::' debian/control
+    #fi
     dpkg-buildpackage -rfakeroot -us -uc -b
     mkdir -p $CURDIR/deb
     mkdir -p $WORKDIR/deb
