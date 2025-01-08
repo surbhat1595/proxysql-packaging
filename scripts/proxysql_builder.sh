@@ -143,9 +143,12 @@ get_sources(){
     GIT_VERSION=${VERSION}-percona
     REVISION=$(git rev-parse --short HEAD)
     sed -i "s/export CURVER?=.*/export CURVER?=${VERSION}/g" Makefile
-    sed -i 's/shell cat.*/shell rpm --eval \%rhel)/' deps/Makefile
+
+    sed -i 's/shell cat.*/shell rpm --eval \%\{\?rhel\}\%\{\?amzn\})/' deps/Makefile
+    sed -i 's/shell rpm.*/shell rpm --eval \%\{\?rhel\}\%\{\?amzn\})/' deps/Makefile
     sed -i 's:6.7:6:' deps/Makefile
-    sed -i 's/shell cat.*/shell rpm --eval \%rhel)/' src/Makefile
+    sed -i 's/shell cat.*/shell rpm --eval \%\{\?rhel\}\%\{\?amzn\})/' src/Makefile
+    sed -i 's/shell rpm.*/shell rpm --eval \%\{\?rhel\}\%\{\?amzn\})/' src/Makefile
     sed -i 's:6.7:6:' src/Makefile
     sed -i '94s|exit 0||' etc/init.d/proxysql
     sed -i "s:GITVERSION:\"${GIT_VERSION}-${RPM_RELEASE}\":g" include/proxysql.h
@@ -174,10 +177,14 @@ get_sources(){
 }
 
 get_system(){
-    if [ -f /etc/redhat-release ]; then
-        RHEL=$(rpm --eval %rhel)
+    if [ -f /etc/redhat-release ] || [ -f /etc/amazon-linux-release ]; then
+        RHEL=$(rpm --eval "%{?rhel}%{?amzn}")
         ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
-        OS_NAME="el$RHEL"
+        if [ -f /etc/amazon-linux-release ]; then
+            export OS_NAME="amzn$RHEL"
+        else
+            export OS_NAME="el$RHEL"
+        fi
         OS="rpm"
     else
         ARCH=$(uname -m)
@@ -229,7 +236,7 @@ install_deps() {
         exit 1
     fi
     CURPLACE=$(pwd)
-    RHEL=$(rpm --eval %rhel)
+    RHEL=$(rpm --eval "%{?rhel}%{?amzn}")
     ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
     if [ "x$OS" = "xrpm" ]; then
       if [ "x${RHEL}" = "x7" -o "x${RHEL}" = "x8" ]; then
@@ -242,7 +249,7 @@ install_deps() {
 #      wget http://jenkins.percona.com/yum-repo/percona-dev.repo
 #      mv -f percona-dev.repo /etc/yum.repos.d/
       yum clean all
-      yum -y install curl epel-release
+      yum -y install curl
       if [ "x${RHEL}" = "x7" -o "x${RHEL}" = "x8" ]; then
             switch_to_vault_repo
       fi
@@ -273,8 +280,11 @@ install_deps() {
         #source /opt/rh/devtoolset-7/enable
         #source /opt/rh/llvm-toolset-7/enable
       else
-	 yum config-manager --enable PowerTools AppStream BaseOS *epel
-	 dnf module -y disable postgresql
+         if [ "x${RHEL}" != "x2023" ]; then
+	     yum config-manager --enable PowerTools AppStream BaseOS *epel
+	     dnf module -y disable postgresql
+             yum -y install epel-release
+         fi
         # dnf config-manager --set-enabled ol${RHEL}_codeready_builder
         # INSTALL_LIST="git rpm-build clang autoconf libtool flex rpmdevtools wget llvm-toolset rpmlint percona-postgresql11-devel gcc make  geos geos-devel proj libgeotiff-devel pcre-devel gmp-devel SFCGAL SFCGAL-devel gdal35-devel geos311-devel gmp-devel gtk2-devel json-c-devel libgeotiff16-devel proj90-devel protobuf-c-devel pkg-config"
       #  yum -y install ${INSTALL_LIST}
@@ -285,7 +295,7 @@ install_deps() {
      #   fi
       fi
      # yum -y install docbook-xsl libxslt-devel
-      INSTALL_LIST="git wget epel-release rpm-build gcc perl automake bzip2 cmake make gcc-c++ gcc git openssl openssl-devel gnutls gnutls-devel libtool patch python3 perl-IPC-Cmd libuuid-devel"
+      INSTALL_LIST="git wget rpm-build gcc perl automake bzip2 cmake make gcc-c++ gcc git openssl openssl-devel gnutls gnutls-devel libtool patch python3 perl-IPC-Cmd libuuid-devel"
       yum -y install ${INSTALL_LIST}
       install_go
       #update_pat
@@ -314,6 +324,14 @@ install_deps() {
           yum -y install yum-utils
           yum-config-manager --enable ol9_codeready_builder
           yum -y install epel-release
+          yum -y install libcurl-devel libunwind libunwind-devel zlib-devel
+      fi
+      if [ $RHEL = 2023 ]; then
+          cat /etc/os-release
+          yum -y update
+          yum -y install python3 gnutls-devel libtool || true
+          ln -s /usr/bin/python3.9 /usr/bin/python || true
+          yum -y install yum-utils systemd systemd-devel
           yum -y install libcurl-devel libunwind libunwind-devel zlib-devel
       fi
       if [ $RHEL -eq 7 ]; then
@@ -531,10 +549,10 @@ build_rpm(){
     cd rpmbuild/SRPMS/
     #
     cd $WORKDIR
-    RHEL=$(rpm --eval %rhel)
+    RHEL=$(rpm --eval "%{?rhel}%{?amzn}")
     ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
     [ -f /opt/percona-devtoolset/enable ] && source /opt/percona-devtoolset/enable
-    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRC_RPM} 
+    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" --rebuild rpmbuild/SRPMS/${SRC_RPM}
 
     return_code=$?
     if [ $return_code != 0 ]; then
